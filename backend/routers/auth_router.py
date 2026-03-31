@@ -54,7 +54,10 @@ def signup(user: UserCreate, response: Response, db: Session = Depends(get_db)):
         db.add(new_user)
 
         # Initialize eco score record for the new user
-        eco_score = DBEcoScore(user_id=user_id)
+        eco_score = DBEcoScore(
+            user_id=user_id,
+            score=0,   # or whatever default fields exist
+        )
         db.add(eco_score)
 
         db.commit()
@@ -68,8 +71,8 @@ def signup(user: UserCreate, response: Response, db: Session = Depends(get_db)):
 
     except Exception as e:
         db.rollback()
-        logger.error(f"❌ Unexpected error during signup for {user.email}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error during registration")
+        logger.error(f"❌ REAL ERROR during signup for {user.email}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
     # ── Step 3: Auto-login — set cookie ───────────────────────────────────
     access_token = create_access_token(
