@@ -26,7 +26,7 @@ class UserResponse(BaseModel):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class LoginResponse(BaseModel):
     message: str
@@ -46,7 +46,7 @@ class DailyInputResponse(DailyInputCreate):
     user_id: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class EcoScoreModel(BaseModel):
     water_credit: float = 0.0
@@ -57,14 +57,14 @@ class EcoScoreModel(BaseModel):
     debt: float = 0.0
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class BadgeModel(BaseModel):
     badge_id: str
     earned: bool
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class WasteDecisionModel(BaseModel):
     item_name: str
@@ -73,7 +73,7 @@ class WasteDecisionModel(BaseModel):
     timestamp: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class DailyGreenIndexModel(BaseModel):
     date: str
@@ -81,4 +81,4 @@ class DailyGreenIndexModel(BaseModel):
     trend: str = "stable"
 
     class Config:
-        orm_mode = True
+        from_attributes = True
