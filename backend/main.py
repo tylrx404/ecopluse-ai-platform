@@ -18,7 +18,7 @@ import json
 import numpy as np
 import joblib   
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Tuple, Dict
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,7 +26,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+    _GENAI_AVAILABLE = True
+except ImportError:
+    genai = None  # type: ignore
+    _GENAI_AVAILABLE = False
+    print("⚠️  google-generativeai not installed — /chat will use fallback responses")
 
 # onnxruntime — optional, graceful degradation if missing
 try:
@@ -73,29 +79,61 @@ eco_score_model = None
 temp_model      = None
 rain_model      = None
 
-try:
-    aqi_model       = joblib.load(ML_DIR / "aqi_model.pkl")
-    eco_score_model = joblib.load(ML_DIR / "eco_score_model.pkl")
-    print("✅  AQI + EcoScore models loaded")
-except Exception as e:
-    print(f"⚠️   AQI/EcoScore models not found — using fallback. ({e})")
+_aqi_path = ML_DIR / "aqi_model.pkl"
+if _aqi_path.exists():
+    try:
+        aqi_model = joblib.load(_aqi_path)
+        print("✅  AQI model loaded")
+    except Exception as e:
+        print(f"❌  Error loading AQI model: {e}")
+else:
+    print("⚠️  AQI model not found — using rule-based fallback")
 
-try:
-    temp_model = joblib.load(ML_DIR / "temp_model.pkl")
-    rain_model = joblib.load(ML_DIR / "rain_model.pkl")
-    print("✅  Temperature + Rain hourly models loaded")
-except Exception as e:
-    print(f"⚠️   Temp/Rain models not found — using rule-based fallback. Run train_models.py. ({e})")
+_eco_path = ML_DIR / "eco_score_model.pkl"
+if _eco_path.exists():
+    try:
+        eco_score_model = joblib.load(_eco_path)
+        print("✅  EcoScore model loaded")
+    except Exception as e:
+        print(f"❌  Error loading EcoScore model: {e}")
+else:
+    print("⚠️  EcoScore model not found — using rule-based fallback")
+
+_temp_path = ML_DIR / "temp_model.pkl"
+if _temp_path.exists():
+    try:
+        temp_model = joblib.load(_temp_path)
+        print("✅  Temperature model loaded")
+    except Exception as e:
+        print(f"❌  Error loading Temperature model: {e}")
+else:
+    print("⚠️  Temperature model not found — using rule-based fallback")
+
+_rain_path = ML_DIR / "rain_model.pkl"
+if _rain_path.exists():
+    try:
+        rain_model = joblib.load(_rain_path)
+        print("✅  Rain model loaded")
+    except Exception as e:
+        print(f"❌  Error loading Rain model: {e}")
+else:
+    print("⚠️  Rain model not found — using rule-based fallback")
 
 # ─────────────────────────────────────────────
 # GEMINI SETUP
 # ─────────────────────────────────────────────
 
-if GEMINI_API_KEY and GEMINI_API_KEY != "placeholder_gemini_key_replace_with_real_key":
-    genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        system_instruction="""You are EcoPulse AI — an expert environmental intelligence assistant built into the EcoPulse platform.
+gemini_model = None
+if not GEMINI_API_KEY or GEMINI_API_KEY == "placeholder_gemini_key_replace_with_real_key":
+    print("⚠️  Gemini API key missing — /chat will use rule-based fallback responses")
+elif not _GENAI_AVAILABLE:
+    print("⚠️  google-generativeai not installed — /chat will use fallback responses")
+else:
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        gemini_model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction="""You are EcoPulse AI — an expert environmental intelligence assistant built into the EcoPulse platform.
 
 You MUST answer every question fully and helpfully. NEVER give generic or evasive responses.
 
@@ -118,11 +156,11 @@ Response style:
 - Use emojis sparingly (max 2 per response)
 - Always answer the actual question asked
 - If asked for a specific city not in your context, say you have live data for the user's registered city and give general guidance for the queried city"""
-    )
-    print("✅  Gemini AI initialized")
-else:
-    gemini_model = None
-    print("⚠️   No GEMINI_API_KEY found. AI Assistant will use fallback responses.")
+        )
+        print("✅  Gemini AI initialized")
+    except Exception as e:
+        gemini_model = None
+        print(f"❌  Gemini initialization failed: {e} — /chat will use fallback responses")
 
 # ─────────────────────────────────────────────
 # APP INIT
@@ -147,19 +185,23 @@ _uploads_dir = BASE_DIR / "uploads"
 _uploads_dir.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
 
-# Initialize Database
-from database import engine
-from models import Base
-import civic_models  # noqa — registers civic tables on Base
-from routers import auth_router, data_router
-from routers import civic_router
+# Initialize Database (safe — app starts even if DB is unavailable)
+try:
+    from database import engine
+    from models import Base
+    import civic_models  # noqa — registers civic tables on Base
+    from routers import auth_router, data_router
+    from routers import civic_router
 
-Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
 
-# Include Routers
-app.include_router(auth_router.router)
-app.include_router(data_router.router)
-app.include_router(civic_router.router)
+    # Include Routers
+    app.include_router(auth_router.router)
+    app.include_router(data_router.router)
+    app.include_router(civic_router.router)
+    print("✅  Database and routers initialized")
+except Exception as e:
+    print(f"❌  Database/router initialization failed: {e}")
 
 # ─────────────────────────────────────────────
 # REQUEST / RESPONSE MODELS
@@ -183,7 +225,7 @@ class AQIForecastPoint(BaseModel):
     color: str
 
 class AQIPredictionResponse(BaseModel):
-    forecast: list[AQIForecastPoint]
+    forecast: List[AQIForecastPoint]
     current_aqi: int
     current_category: str
 
@@ -197,8 +239,8 @@ class EcoScoreRequest(BaseModel):
 class EcoScoreResponse(BaseModel):
     score: float
     category: str
-    insights: list[str]
-    breakdown: dict
+    insights: List[str]
+    breakdown: Dict
 
 class RecommendationRequest(BaseModel):
     aqi: float
@@ -219,7 +261,7 @@ class Recommendation(BaseModel):
     category: str   # "air" | "energy" | "transport" | "water" | "waste"
 
 class RecommendationResponse(BaseModel):
-    recommendations: list[Recommendation]
+    recommendations: List[Recommendation]
 
 class ChatMessage(BaseModel):
     role: str   # "user" | "assistant"
@@ -227,8 +269,8 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
-    history: Optional[list[ChatMessage]] = []
-    context: Optional[dict] = None   # optional: current AQI, city, weather
+    history: Optional[List[ChatMessage]] = []
+    context: Optional[Dict] = None   # optional: current AQI, city, weather
 
 class ChatResponse(BaseModel):
     response: str
@@ -240,7 +282,7 @@ class ChatResponse(BaseModel):
 TRANSPORT_MAP = {"walk": 0, "cycle": 1, "public": 2, "private": 3}
 OUTDOOR_MAP   = {"low": 0, "medium": 1, "high": 2}
 
-def aqi_to_category(aqi: int) -> tuple[str, str]:
+def aqi_to_category(aqi: int) -> Tuple[str, str]:
     """Return (category_label, color_hex) for a given AQI."""
     if aqi <= 50:   return ("Good", "#22c55e")
     if aqi <= 100:  return ("Satisfactory", "#84cc16")
@@ -362,7 +404,7 @@ def _base_features(req: HourlyPredictionRequest) -> np.ndarray:
     ])
 
 
-@app.post("/predict/aqi-hourly", response_model=list[HourlyPoint])
+@app.post("/predict/aqi-hourly", response_model=List[HourlyPoint])
 def predict_aqi_hourly(req: HourlyPredictionRequest):
     """Predict hourly AQI for the next 72 hours."""
     result = []
@@ -396,7 +438,7 @@ def predict_aqi_hourly(req: HourlyPredictionRequest):
     return result
 
 
-@app.post("/predict/temp-hourly", response_model=list[HourlyPoint])
+@app.post("/predict/temp-hourly", response_model=List[HourlyPoint])
 def predict_temp_hourly(req: HourlyPredictionRequest):
     """Predict hourly temperature for the next 72 hours."""
     result = []
@@ -419,7 +461,7 @@ def predict_temp_hourly(req: HourlyPredictionRequest):
     return result
 
 
-@app.post("/predict/rain-hourly", response_model=list[HourlyPoint])
+@app.post("/predict/rain-hourly", response_model=List[HourlyPoint])
 def predict_rain_hourly(req: HourlyPredictionRequest):
     """Predict hourly rainfall probability (0–100%) for the next 72 hours."""
     result = []
@@ -715,8 +757,8 @@ def _rule_based_predict_temp(humidity: float, wind_speed: float, temp_lag1: floa
 
 
 class WeeklyForecastResponse(BaseModel):
-    days:        list[str]
-    temperature: list[float]
+    days:        List[str]
+    temperature: List[float]
 
 
 @app.get("/predict", response_model=WeeklyForecastResponse)
