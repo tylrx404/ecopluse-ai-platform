@@ -144,9 +144,9 @@ app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
 
 # ── Register routers ──────────────────────────────────────────────────────────
 try:
-    from backend.app.db import engine
-    from backend.app.models import Base
-    from backend.app.routers import auth, data, civic
+    from app.db import engine
+    from app.models import Base
+    from app.routers import auth, data, civic
 
     app.include_router(auth.router)
     app.include_router(data.router)
