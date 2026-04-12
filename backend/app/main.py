@@ -144,11 +144,9 @@ app.mount("/uploads", StaticFiles(directory=str(_uploads_dir)), name="uploads")
 
 # ── Register routers ──────────────────────────────────────────────────────────
 try:
-    from app.db import engine
-    from app.models import Base
-    import app.civic_models  # noqa: F401 — registers civic tables on Base
-
-    from app.routers import auth, data, civic
+    from backend.app.db import engine
+    from backend.app.models import Base
+    from backend.app.routers import auth, data, civic
 
     app.include_router(auth.router)
     app.include_router(data.router)
@@ -648,4 +646,4 @@ def predict_weekly_temperature(
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("app.main:app", host="0.0.0.0", port=port)
+    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=port)
