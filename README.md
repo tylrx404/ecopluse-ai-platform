@@ -130,13 +130,13 @@ Users log:
 ## 📸 Screenshots
 
 ### 📊 Dashboard
-<img src="./screenshots/dashboard.png" width="800"/>
+<img src="./screenshots-dashboard.png" width="800"/>
 
 ### 📝 Daily Input System
-<img src="./screenshots/daily-input.png" width="800"/>
+<img src="./screenshots-daily-input.png" width="800"/>
 
 ### 🚯 Civic Issue Admin Panel (Core Feature 🚀)
-<img src="./screenshots/civic-admin.png" width="800"/>
+<img src="./screenshots-civic-admin.png" width="800"/>
 ---
 
 ## 🎯 Use Cases
